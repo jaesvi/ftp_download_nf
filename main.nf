@@ -10,7 +10,7 @@ if (!params.outdir) {
     error "Please provide --outdir parameter pointing to your output directory"
 }
 
-pprocess DOWNLOAD_FTP_DATA {
+process DOWNLOAD_FTP_DATA {
     conda "conda-forge::aria2=1.37.0"
     
     publishDir "${params.outdir}/raw_data", mode: 'copy'
@@ -63,7 +63,7 @@ workflow {
     
     // Download files
     DOWNLOAD_FTP_DATA(ftp_urls_ch)
-        
+
     // Emit results
     DOWNLOAD_FTP_DATA.out.downloaded_files.view { "Downloaded: $it" }
 }
