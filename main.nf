@@ -10,8 +10,8 @@ if (!params.outdir) {
     error "Please provide --outdir parameter pointing to your output directory"
 }
 
-process DOWNLOAD_FTP_DATA {
-    conda "conda-forge::wget=1.21.3"
+pprocess DOWNLOAD_FTP_DATA {
+    conda "conda-forge::aria2=1.37.0"
     
     publishDir "${params.outdir}/raw_data", mode: 'copy'
     
@@ -25,8 +25,18 @@ process DOWNLOAD_FTP_DATA {
     script:
     def filename = ftp_url.split('/').last()
     """
-    # Download file from FTP
-    wget -t 3 -T 30 "${ftp_url}" -O "${filename}"
+    # Use aria2c for parallel, resumable downloads
+    aria2c \\
+        --max-connection-per-server=4 \\
+        --split=4 \\
+        --min-split-size=1M \\
+        --continue=true \\
+        --retry-wait=3 \\
+        --max-tries=5 \\
+        --timeout=60 \\
+        --connect-timeout=30 \\
+        "${ftp_url}" \\
+        --out="${filename}"
     
     # Verify download
     if [ ! -s "${filename}" ]; then
@@ -34,33 +44,12 @@ process DOWNLOAD_FTP_DATA {
         exit 1
     fi
     
-    # Create versions file
+    echo "Successfully downloaded: ${filename} (\$(du -h ${filename} | cut -f1))"
+    
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        wget: \$(wget --version | head -n1 | cut -d' ' -f3)
+        aria2: \$(aria2c --version | head -n1 | cut -d' ' -f3)
     END_VERSIONS
-    """
-}
-
-process VALIDATE_FILES {
-    conda "conda-forge::md5sum=8.32"
-    
-    publishDir "${params.outdir}/validation", mode: 'copy'
-    
-    input:
-    path files
-    
-    output:
-    path "file_checksums.txt", emit: checksums
-    path "file_sizes.txt", emit: sizes
-    
-    script:
-    """
-    # Generate checksums
-    md5sum ${files} > file_checksums.txt
-    
-    # Get file sizes
-    ls -lh ${files} > file_sizes.txt
     """
 }
 
@@ -74,10 +63,7 @@ workflow {
     
     // Download files
     DOWNLOAD_FTP_DATA(ftp_urls_ch)
-    
-    // Validate downloaded files
-    VALIDATE_FILES(DOWNLOAD_FTP_DATA.out.downloaded_files.collect())
-    
+        
     // Emit results
     DOWNLOAD_FTP_DATA.out.downloaded_files.view { "Downloaded: $it" }
 }
